@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="다고침집수리">
+  <!-- 신뢰감을 주는 딥 네이비 바탕 -->
+  <rect width="512" height="512" fill="#13294B"/>
+  <!-- 샤프한 기하학 대문자 D (다고침집수리)
+       폰트에 의존하지 않고 도형으로 그려 어떤 환경에서도 동일하게 렌더링됩니다.
+       직선 기둥 + 반원 곡선, 모서리는 miter 로 각지게 처리했습니다. -->
+  <path d="M142 118 H232 A138 138 0 0 1 232 394 H142 Z"
+        fill="none" stroke="#FFFFFF" stroke-width="58"
+        stroke-linecap="butt" stroke-linejoin="miter"/>
+</svg>
