@@ -130,6 +130,7 @@ def head(title, desc, path, img=None, extra="", home=False):
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/site.css?v={VERSION}">
+<link rel="alternate" type="application/rss+xml" title="{e(S['brand'])} 시공사례" href="{url('/rss.xml')}">
 {extra}
 </head>
 <body>
@@ -510,7 +511,46 @@ def build_assets():
         parts.append("</url>")
     parts.append("</urlset>")
     (DIST / "sitemap.xml").write_text("\n".join(parts), encoding="utf-8")
+    build_rss()
     return len(used)
+
+
+def build_rss():
+    """시공사례 RSS — 네이버 서치어드바이저 'RSS 제출'용 (홈페이지와 같은 도메인이어야 함)"""
+    from datetime import datetime
+    from email.utils import format_datetime
+    from zoneinfo import ZoneInfo
+    kst = ZoneInfo("Asia/Seoul")
+
+    def rfc822(d):
+        return format_datetime(datetime.strptime(d, "%Y-%m-%d").replace(hour=9, tzinfo=kst))
+
+    items = []
+    for p in POSTS:
+        link = url(f"/portfolio/{p['id']}/")
+        img = f'<img src="{url("/img/" + p["thumb"])}" alt="{e(p["title"])}"><br>' if p["thumb"] else ""
+        items.append(f"""<item>
+ <title>{e(p['title'])}</title>
+ <link>{link}</link>
+ <guid isPermaLink="true">{link}</guid>
+ <category>{e(SVC[p['cat']]['name'])}</category>
+ <description><![CDATA[{img}{p['summary']} ({p['area']})]]></description>
+ <pubDate>{rfc822(p['date'])}</pubDate>
+</item>""")
+    rss = f"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+ <title>{e(S['brand'])} 시공사례</title>
+ <link>{url('/')}</link>
+ <atom:link href="{url('/rss.xml')}" rel="self" type="application/rss+xml"/>
+ <description>{e(S['mainArea'])} 집수리 {e(S['brand'])}가 직접 다녀온 현장 기록</description>
+ <language>ko</language>
+ <lastBuildDate>{rfc822(DATES[-1])}</lastBuildDate>
+{chr(10).join(items)}
+</channel>
+</rss>
+"""
+    (DIST / "rss.xml").write_text(rss, encoding="utf-8")
 
 
 def main():
