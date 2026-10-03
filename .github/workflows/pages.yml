@@ -1,0 +1,42 @@
+# 홈페이지 자동 배포
+# main 에 무엇을 올리든 'dist' 폴더 안의 내용만 홈페이지(koniture-g-south.co.kr)로 내보냅니다.
+# data / scripts / static / README 는 홈페이지에 나가지 않습니다.
+#
+# 이 파일이 동작하려면: 저장소 Settings → Pages → Source 를 'GitHub Actions' 로 설정
+name: 홈페이지 배포 (dist)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # Actions 탭에서 수동 실행도 가능
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 연결 도메인 정보(CNAME)를 홈페이지 폴더에 함께 넣음
+      - name: CNAME 복사
+        run: cp CNAME dist/CNAME
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
