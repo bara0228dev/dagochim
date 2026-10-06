@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  sitemap.xml — 동탄홈케어 (변기 백시멘트 시공 · 보수 전문)
+  https://koniture-g-south.co.kr/
+
+  ※ 한 페이지(원페이지) 사이트이므로 URL은 메인 1개입니다.
+     #서비스, #포트폴리오 같은 앵커는 별도 URL이 아니라서 넣지 않습니다.
+  ※ 시공 사례 사진은 구글 이미지 검색 노출을 위해 image 태그로 함께 등록합니다.
+  ※ 사이트 내용을 수정하면 아래 <lastmod> 날짜를 바꿔주세요. (YYYY-MM-DD)
+  ※ 사진 추가 시 image:image 블록을 복사해 loc 파일명과 title 만 바꾸세요.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+
+  <url>
+    <loc>https://koniture-g-south.co.kr/</loc>
+    <lastmod>2026-09-16</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/7.jpg?v=20260916</image:loc>
+      <image:title>테라코타 타일 욕실 변기 백시멘트 시공</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/8.jpg?v=20260916</image:loc>
+      <image:title>비데 설치 변기 하단 백시멘트 마감</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/1.jpg?v=20260916</image:loc>
+      <image:title>베이지 대리석 타일 변기 백시멘트 시공</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/2.jpg?v=20260916</image:loc>
+      <image:title>양변기 하단 둘레 백시멘트 마감</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/6.jpg?v=20260916</image:loc>
+      <image:title>밝은 타일 욕실 변기 백시멘트 전체 둘레 시공</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/3.jpg?v=20260916</image:loc>
+      <image:title>회색 타일 원형 변기 받침 백시멘트 시공</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/4.jpg?v=20260916</image:loc>
+      <image:title>회색 타일 변기 곡선부 백시멘트 마감</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/5.jpg?v=20260916</image:loc>
+      <image:title>변기 모서리 백시멘트 곡선 마감 근접 사진</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/9.jpg?v=20260916</image:loc>
+      <image:title>어두운 타일 욕실 변기 백시멘트 시공</image:title>
+    </image:image>
+
+    <image:image>
+      <image:loc>https://koniture-g-south.co.kr/10.jpg?v=20260916</image:loc>
+      <image:title>변기 백시멘트 갈라짐 보수 전 상태</image:title>
+    </image:image>
+
+  </url>
+
+</urlset>
