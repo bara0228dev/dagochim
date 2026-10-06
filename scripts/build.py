@@ -181,7 +181,8 @@ def cta(title="사진 한 장이면 상담이 시작됩니다", region=""):
 
 
 def footer():
-    svc_links = "".join(f'<a href="/service/{k}/">{e(SVC[k]["short"])}</a>' for k in SVC_ORDER)
+    svc_links = "".join(f'<a href="/service/{k}/">{e(SVC[k]["short"])}</a>' for k in SVC_ORDER) + "".join(
+        f'<a href="/service/{t["key"]}/">{e(t["short"])}</a>' for t in C.get("themes", []))
     reg_links = "".join(f'<a href="/area/{r}/">{e(REG[r])}</a>' for r in REGION_PAGES)
     return f"""</main>
 <footer class="ft"><div class="wrap ft-in">
@@ -265,6 +266,7 @@ def build_home():
  <h2 class="h2">작업 분야 {len(SVC)}가지</h2>
  <p class="sub">블로그 기록 {n}건을 분야별로 나눈 것입니다. 숫자는 실제로 한 건수입니다.</p>
  <div class="fields">{fields}</div>
+ {''.join(f'<div class="box"><b>{e(t["name"])}</b><p>{e(t["tagline"])}. 전세·월세 퇴거 전 원상복구, 입주 전 하자보수까지 기록 {len(t["posts"])}건.</p><a href="/service/{t["key"]}/">원상복구 작업 보기 →</a></div>' for t in C.get("themes", []))}
 </div></section>
 
 <section class="sec"><div class="wrap">
@@ -326,7 +328,7 @@ def build_services():
                                   "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in faq]}
         path = f"/service/{k}/"
         bc = [("홈", "/"), ("작업분야", "/#services"), (s["name"], path)]
-        title = f"{s['name']} | {S['brand']}"
+        title = f"{S['mainArea']} {s['name']} | {S['brand']}"
         desc = f"{s['tagline']}. {S['brand']} {s['name']} 기록 {len(posts)}건. " + ", ".join(s["works"][:3]) + "."
         body = head(title, desc, path, posts[0]["thumb"], breadcrumb_ld(bc) + jsonld(faq_ld)) + header("service") + crumbs(bc) + f"""
 <section class="page-hd"><div class="wrap">
@@ -357,9 +359,61 @@ def build_services():
  <h2 class="h3">지역별로 보기</h2>
  <div class="chips">{''.join(f'<a class="chip ghost" href="/area/{r}/">{e(REG[r])} {c}건</a>' if r in REGION_PAGES else f'<span class="chip ghost">{e(REG[r])} {c}건</span>' for r, c in regs.most_common())}</div>
  <h2 class="h3">다른 작업분야</h2>
- <div class="chips">{''.join(f'<a class="chip" href="/service/{o}/">{e(SVC[o]["short"])}</a>' for o in SVC_ORDER if o != k)}</div>
+ <div class="chips">{''.join(f'<a class="chip" href="/service/{o}/">{e(SVC[o]["short"])}</a>' for o in SVC_ORDER if o != k)}{''.join(f'<a class="chip" href="/service/{t["key"]}/">{e(t["short"])}</a>' for t in C.get("themes", []))}</div>
 </div></section>
 """ + cta(f"{s['short']}, 사진 한 장이면 상담됩니다") + footer()
+        write(path, body)
+
+
+# ───────────────────────── 주제 페이지 (여러 분야에 걸친 상황: 이사 전후 원상복구 등) ─────────────────────────
+THEMES = C.get("themes", [])
+POST_BY_ID = {p["id"]: p for p in POSTS}
+
+
+def build_themes():
+    for t in THEMES:
+        posts = [POST_BY_ID[i] for i in t["posts"] if i in POST_BY_ID]
+        qs = [p["quotes"][0] for p in posts if p["quotes"]][:4]
+        photos = [(p, ph) for p in posts for ph in p["photos"][:1]][:8]
+        cats = Counter(p["cat"] for p in posts)
+        faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
+                  "mainEntity": [{"@type": "Question", "name": f["q"],
+                                  "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in t["faq"]]}
+        path = f"/service/{t['key']}/"
+        bc = [("홈", "/"), ("작업분야", "/#services"), (t["name"], path)]
+        title = f"{S['mainArea']} {t['name']} | {S['brand']}"
+        desc = (f"{t['tagline']}. 전세·월세 퇴거 전 원상복구, 입주 전 하자보수 같은 생활수리를 고장 난 부분만. "
+                f"{S['brand']} 기록 {len(posts)}건.")
+        body = head(title, desc, path, posts[0]["thumb"], breadcrumb_ld(bc) + jsonld(faq_ld)) + header("service") + crumbs(bc) + f"""
+<section class="page-hd"><div class="wrap">
+ <small class="eng">{e(t['eng'])}</small>
+ <h1>{e(t['name'])}</h1>
+ <p class="lead">{e(t['tagline'])}</p>
+ <div class="chips big"><span class="chip">기록 {len(posts)}건</span>{''.join(f'<a class="chip ghost" href="/service/{k}/">{e(SVC[k]["short"])} {v}건</a>' for k, v in cats.most_common())}</div>
+</div></section>
+<section class="sec"><div class="wrap narrow">
+ <p class="prose">{e(t['intro'])}</p>
+ <h2 class="h3">이사 전후로 맡기신 작업</h2>
+ <ul class="checks">{''.join(f'<li>{e(w)}</li>' for w in t['works'])}</ul>
+ {f'<h2 class="h3">이런 문의를 받았습니다</h2><p class="sub small">블로그에 남아 있는 실제 고객님 말씀입니다.</p><div class="quotes">' + ''.join(f'<blockquote>“{e(q)}”</blockquote>' for q in qs) + '</div>' if qs else ''}
+</div></section>
+<section class="sec alt"><div class="wrap">
+ <h2 class="h2">원상복구 시공 사진</h2>
+ <div class="gallery">{''.join(f'<a href="/portfolio/{p["id"]}/"><img src="/img/{ph}" alt="{e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
+</div></section>
+<section class="sec"><div class="wrap">
+ <h2 class="h2">진행 절차</h2>{steps()}
+</div></section>
+<section class="sec alt"><div class="wrap">
+ <h2 class="h2">이사 전후 시공사례 {len(posts)}건</h2>{grid(posts)}
+</div></section>
+<section class="sec"><div class="wrap narrow">
+ <h2 class="h2">자주 묻는 질문</h2>
+ <div class="faq">{''.join(f'<details><summary>Q. {e(f["q"])}</summary><p>{e(f["a"])}</p></details>' for f in t['faq'])}</div>
+ <h2 class="h3">다른 작업분야</h2>
+ <div class="chips">{''.join(f'<a class="chip" href="/service/{o}/">{e(SVC[o]["short"])}</a>' for o in SVC_ORDER)}</div>
+</div></section>
+""" + cta("이사 날짜와 사진을 함께 보내주세요") + footer()
         write(path, body)
 
 
@@ -437,7 +491,8 @@ def build_areas():
         combos = [c for (rr, c) in COMBOS if rr == r]
         lead = f"{name}에서 기록한 시공은 {len(posts)}건이고, 그중 {top_n}건이 {SVC[top]['short']} 작업입니다."
         title = f"{name} 집수리 | {S['brand']}"
-        desc = f"{lead} " + ", ".join(f"{SVC[k]['short']} {v}건" for k, v in svc_cnt.most_common(4)) + "."
+        desc = (f"{name} " + ", ".join(f"{SVC[k]['short']}" for k, _ in svc_cnt.most_common(4))
+                + f". 고장 난 부분만 고칩니다. 사진을 문자로 보내주시면 가능한 방법부터 알려드립니다. {name} 시공 기록 {len(posts)}건.")
         body = head(title, desc, path, posts[0]["thumb"], breadcrumb_ld(bc)) + header("area") + crumbs(bc) + f"""
 <section class="page-hd"><div class="wrap"><small class="eng">AREA · {e(name)}</small><h1>{e(name)} 집수리</h1>
  <p class="lead">{e(lead)}</p>
@@ -458,7 +513,8 @@ def build_areas():
         lead = f"{name} 기록 {total}건 중 {len(posts)}건이 {s['short']} 작업입니다."
         same_svc = [rr for (rr, kk) in COMBOS if kk == k and rr != r]
         title = f"{name} {s['name']} | {S['brand']}"
-        desc = f"{lead} {s['tagline']}. " + " · ".join(p["title"] for p in posts[:2])
+        desc = (f"{name} {s['name']}. {s['tagline']}. 사진을 문자로 보내주시면 가능한 방법부터 알려드립니다. "
+                f"{name} 시공 기록: " + " · ".join(p["title"] for p in posts[:2]))
         body = head(title, desc, path, posts[0]["thumb"], breadcrumb_ld(bc)) + header("area") + crumbs(bc) + f"""
 <section class="page-hd"><div class="wrap"><small class="eng">{e(s['eng'])} · {e(name)}</small><h1>{e(name)} {e(s['name'])}</h1>
  <p class="lead">{e(lead)} {e(s['tagline'])}.</p></div></section>
@@ -558,7 +614,7 @@ def main():
     if DIST.exists():
         shutil.rmtree(DIST)
     DIST.mkdir()
-    build_home(); build_services(); build_portfolio(); build_areas(); build_contact()
+    build_home(); build_services(); build_themes(); build_portfolio(); build_areas(); build_contact()
     n_img = build_assets()
     print(f"페이지 {len(PAGES)}개 (메인 1 · 분야 {len(SVC)} · 사례 {len(POSTS) + 1} · 지역 {len(REGION_PAGES) + 1} · 지역+분야 {len(COMBOS)} · 상담 1)")
     print(f"사진 {n_img}장 · sitemap.xml · robots.txt → dist/")
