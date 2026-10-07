@@ -18,6 +18,7 @@ import html
 import json
 import shutil
 import sys
+from urllib.parse import quote
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -98,7 +99,7 @@ DATES = sorted(p["date"] for p in POSTS)
 
 # ───────────────────────── 공통 조각 ─────────────────────────
 def url(path):
-    return BASE + path
+    return BASE + quote(path, safe="/")
 
 
 def head(title, desc, path, img=None, extra="", home=False):
@@ -266,6 +267,7 @@ def build_home():
  <h2 class="h2">작업 분야 {len(SVC)}가지</h2>
  <p class="sub">블로그 기록 {n}건을 분야별로 나눈 것입니다. 숫자는 실제로 한 건수입니다.</p>
  <div class="fields">{fields}</div>
+ <h2 class="h3">많이 찾는 작업</h2>{kw_chips()}
  {''.join(f'<div class="box"><b>{e(t["name"])}</b><p>{e(t["tagline"])}. 전세·월세 퇴거 전 원상복구, 입주 전 하자보수까지 기록 {len(t["posts"])}건.</p><a href="/service/{t["key"]}/">원상복구 작업 보기 →</a></div>' for t in C.get("themes", []))}
 </div></section>
 
@@ -328,7 +330,7 @@ def build_services():
                                   "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in faq]}
         path = f"/service/{k}/"
         bc = [("홈", "/"), ("작업분야", "/#services"), (s["name"], path)]
-        title = f"{S['mainArea']} {s['name']} | {S['brand']}"
+        title = f"{s['name']} | {S['mainArea']} {S['brand']}"
         desc = f"{s['tagline']}. {S['brand']} {s['name']} 기록 {len(posts)}건. " + ", ".join(s["works"][:3]) + "."
         body = head(title, desc, path, posts[0]["thumb"], breadcrumb_ld(bc) + jsonld(faq_ld)) + header("service") + crumbs(bc) + f"""
 <section class="page-hd"><div class="wrap">
@@ -356,6 +358,7 @@ def build_services():
 <section class="sec"><div class="wrap narrow">
  <h2 class="h2">자주 묻는 질문</h2>
  <div class="faq">{''.join(f'<details><summary>Q. {e(f["q"])}</summary><p>{e(f["a"])}</p></details>' for f in faq)}</div>
+ {f'<h2 class="h3">자주 찾는 {e(s["short"])} 작업</h2>' + kw_chips([k]) if any(x["svc"] == k for x in KWP) else ''}
  <h2 class="h3">지역별로 보기</h2>
  <div class="chips">{''.join(f'<a class="chip ghost" href="/area/{r}/">{e(REG[r])} {c}건</a>' if r in REGION_PAGES else f'<span class="chip ghost">{e(REG[r])} {c}건</span>' for r, c in regs.most_common())}</div>
  <h2 class="h3">다른 작업분야</h2>
@@ -381,7 +384,7 @@ def build_themes():
                                   "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in t["faq"]]}
         path = f"/service/{t['key']}/"
         bc = [("홈", "/"), ("작업분야", "/#services"), (t["name"], path)]
-        title = f"{S['mainArea']} {t['name']} | {S['brand']}"
+        title = f"{t['name']} | {S['mainArea']} {S['brand']}"
         desc = (f"{t['tagline']}. 전세·월세 퇴거 전 원상복구, 입주 전 하자보수 같은 생활수리를 고장 난 부분만. "
                 f"{S['brand']} 기록 {len(posts)}건.")
         body = head(title, desc, path, posts[0]["thumb"], breadcrumb_ld(bc) + jsonld(faq_ld)) + header("service") + crumbs(bc) + f"""
@@ -415,6 +418,79 @@ def build_themes():
 </div></section>
 """ + cta("이사 날짜와 사진을 함께 보내주세요") + footer()
         write(path, body)
+
+
+
+# ───────────────────────── 검색어 페이지 (/로보락-직배수-키트-설치/ 처럼 검색어 그대로인 주소) ─────────────────────────
+KWP = C.get("keywordPages", [])
+KW_OF_POST = {}
+for _k in KWP:
+    for _i in _k["posts"]:
+        KW_OF_POST.setdefault(_i, _k)
+
+
+def kw_href(k):
+    return "/" + quote(k["slug"]) + "/"
+
+
+def build_keywords():
+    for k in KWP:
+        posts = [POST_BY_ID[i] for i in k["posts"] if i in POST_BY_ID]
+        s = SVC[k["svc"]]
+        regions = []
+        for p in posts:
+            if REG[p["region"]] not in regions:
+                regions.append(REG[p["region"]])
+        crews, hrs, short = crew_summary(posts)
+        qs = [p["quotes"][0] for p in posts if p["quotes"]][:3]
+        photos = [(p, ph) for p in posts for ph in p["photos"][:3]][:9]
+        faq = k["faq"] + [{"q": "어느 지역까지 오시나요?", "a": f"{S['areaLine']}. 이 작업은 {', '.join(regions)}에서 했습니다."}]
+        faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
+                  "mainEntity": [{"@type": "Question", "name": f["q"],
+                                  "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in faq]}
+        path = f"/{k['slug']}/"
+        bc = [("홈", "/"), (s["name"], f"/service/{k['svc']}/"), (k["kw"], path)]
+        title = f"{k['kw']} | {S['mainArea']} {S['brand']}"
+        desc = f"{k['kw']}. {k['lead']}. {S['brand']} 실제 시공 {len(posts)}건 ({', '.join(regions)}). 사진을 문자로 보내주시면 가능한 방법부터 알려드립니다."
+        others = [o for o in KWP if o is not k]
+        body = head(title, desc, path, posts[0]["thumb"], breadcrumb_ld(bc) + jsonld(faq_ld)) + header("service") + crumbs(bc) + f"""
+<section class="page-hd"><div class="wrap">
+ <small class="eng">{e(s['eng'])}</small>
+ <h1>{e(k['kw'])}</h1>
+ <p class="lead">{e(k['lead'])}</p>
+ <div class="chips big"><span class="chip">시공 {len(posts)}건</span>{''.join(f'<span class="chip ghost">{e(r)}</span>' for r in regions)}</div>
+</div></section>
+<section class="sec"><div class="wrap narrow">
+ <p class="prose">{e(k['intro'])}</p>
+ <h2 class="h3">{e(k['kw'])}, 이런 집에서 했습니다</h2>
+ <ul class="checks">{''.join(f'<li>{e(c)}</li>' for c in k['checks'])}</ul>
+ {f'<p class="sub small">시간을 적어 둔 {len(hrs)}건 중 {short}건이 3시간 안에 끝났고, 대부분 {crews.most_common(1)[0][0]}명이 작업했습니다.</p>' if hrs and crews else ''}
+ {f'<h2 class="h3">고객님 말씀</h2><div class="quotes">' + ''.join(f'<blockquote>“{e(q)}”</blockquote>' for q in qs) + '</div>' if qs else ''}
+</div></section>
+<section class="sec alt"><div class="wrap">
+ <h2 class="h2">{e(k['kw'])} 사진</h2>
+ <div class="gallery">{''.join(f'<a href="/portfolio/{p["id"]}/"><img src="/img/{ph}" alt="{e(k["kw"])} — {e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
+</div></section>
+<section class="sec"><div class="wrap">
+ <h2 class="h2">{e(k['kw'])} 시공사례 {len(posts)}건</h2>{grid(posts)}
+</div></section>
+<section class="sec alt"><div class="wrap">
+ <h2 class="h2">진행 절차</h2>{steps()}
+</div></section>
+<section class="sec"><div class="wrap narrow">
+ <h2 class="h2">자주 묻는 질문</h2>
+ <div class="faq">{''.join(f'<details><summary>Q. {e(f["q"])}</summary><p>{e(f["a"])}</p></details>' for f in faq)}</div>
+ <div class="box"><b>{e(s['name'])}</b><p>{e(s['tagline'])}</p><a href="/service/{k['svc']}/">{e(s['short'])} 작업 전체 보기 →</a></div>
+ <h2 class="h3">다른 작업</h2>
+ <div class="chips">{''.join(f'<a class="chip ghost" href="{kw_href(o)}">{e(o["kw"])}</a>' for o in others)}</div>
+</div></section>
+""" + cta(f"{k['kw']}, 사진 한 장이면 상담됩니다") + footer()
+        write(path, body)
+
+
+def kw_chips(keys=None):
+    items = [k for k in KWP if keys is None or k["svc"] in keys]
+    return '<div class="chips">' + "".join(f'<a class="chip ghost" href="{kw_href(k)}">{e(k["kw"])}</a>' for k in items) + "</div>"
 
 
 # ───────────────────────── 시공사례 ─────────────────────────
@@ -460,6 +536,7 @@ def build_portfolio():
  {quote}
  <div class="gallery lb">{''.join(f'<a href="/img/{ph}"><img src="/img/{ph}" alt="{e(p["title"])} 사진 {i + 1}" loading="{"eager" if i < 2 else "lazy"}"></a>' for i, ph in enumerate(p['photos']))}</div>
  <p class="src"><a class="btn ghost" href="{p['blogUrl']}" target="_blank" rel="noopener">블로그에서 작업 과정 전체 보기 →</a> {reg_link}</p>
+ {f'<p class="src"><a class="btn ghost" href="{kw_href(KW_OF_POST[p["id"]])}">{e(KW_OF_POST[p["id"]]["kw"])} 사례 모아 보기 →</a></p>' if p["id"] in KW_OF_POST else ''}
  <div class="box"><b>{e(s['name'])}은 이렇게 합니다</b><p>{e(s['tagline'])}</p><a href="/service/{p['cat']}/">작업 방법 · 자주 묻는 질문 보기 →</a></div>
 </div></article>
 <section class="sec alt"><div class="wrap"><h2 class="h2">비슷한 시공사례</h2>{grid(related)}</div></section>
@@ -614,7 +691,7 @@ def main():
     if DIST.exists():
         shutil.rmtree(DIST)
     DIST.mkdir()
-    build_home(); build_services(); build_themes(); build_portfolio(); build_areas(); build_contact()
+    build_home(); build_services(); build_themes(); build_keywords(); build_portfolio(); build_areas(); build_contact()
     n_img = build_assets()
     print(f"페이지 {len(PAGES)}개 (메인 1 · 분야 {len(SVC)} · 사례 {len(POSTS) + 1} · 지역 {len(REGION_PAGES) + 1} · 지역+분야 {len(COMBOS)} · 상담 1)")
     print(f"사진 {n_img}장 · sitemap.xml · robots.txt → dist/")
