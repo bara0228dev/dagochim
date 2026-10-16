@@ -16,9 +16,12 @@ data/posts.json(블로그 원문) + data/content.json(편집 데이터)로 홈�
 """
 import html
 import json
+import re
 import shutil
 import sys
 from urllib.parse import quote
+
+from PIL import Image
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -28,9 +31,26 @@ from extract_facts import crew_hours, quotes  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 DATA, DIST, STATIC = ROOT / "data", ROOT / "dist", ROOT / "static"
 MIN_PAGE = 2   # 지역·지역+분야 페이지를 만드는 최소 사례 수
+TODAY = "2026-10-16"          # 이번 빌드 날짜 (사이트맵 lastmod)
+FREEZE_UNTIL = "2026-11-01"   # 이 날짜 전까지 기존 페이지의 title·description은 baseline 그대로 유지
 
 C = json.loads((DATA / "content.json").read_text(encoding="utf-8"))
 RAW = {p["logNo"]: p for p in json.loads((DATA / "posts.json").read_text(encoding="utf-8"))["posts"]}
+# 같은 대표의 두 번째 블로그(사진·사실만 사용, 블로그 링크·이름은 쓰지 않음)
+RAW.update({p["logNo"]: p for p in json.loads((DATA / "posts_donyotti.json").read_text(encoding="utf-8"))["posts"]})
+NEW_CASES = [x for f in sorted(DATA.glob("new_cases_*.json")) for x in json.loads(f.read_text(encoding="utf-8"))]
+STORIES = {}
+for _f in sorted(DATA.glob("old_story_*.json")):
+    STORIES.update(json.loads(_f.read_text(encoding="utf-8")))
+EXTRA = {}   # 사례별 '작업 후 달라진 점'·'맡기기 전에 확인할 점' (블로그 후기·체크포인트를 새로 쓴 것)
+for _f in sorted(DATA.glob("extra_*.json")):
+    EXTRA.update(json.loads(_f.read_text(encoding="utf-8")))
+POINTS = {}  # 사례별 '이 현장의 작업 포인트' (블로그의 자재·순서 설명을 새로 쓴 것)
+for _f in sorted(DATA.glob("point_*.json")):
+    POINTS.update(json.loads(_f.read_text(encoding="utf-8")))
+BASELINE = json.loads((DATA / "baseline_2026-10-16.json").read_text(encoding="utf-8"))
+ABOUT = json.loads((DATA / "about.json").read_text(encoding="utf-8"))
+OUT = json.loads((DATA / "outreach.json").read_text(encoding="utf-8"))
 BANNERS = set(json.loads((DATA / "banners.json").read_text(encoding="utf-8")))
 S = C["site"]
 BASE = S["baseUrl"].rstrip("/")
@@ -60,7 +80,26 @@ for c in C["posts"]:
     POSTS.append({**c, "date": raw["date"], "blogUrl": raw["url"], "place": raw.get("place"),
                   "crew": crew, "hours": hours, "time": fmt_time(hours),
                   "quotes": quotes(raw["paragraphs"]), "photos": photos,
-                  "thumb": photos[0] if photos else None})
+                  "thumb": photos[0] if photos else None,
+                  "path": f"/portfolio/{c['id']}/", "story": STORIES.get(c["id"])})
+
+
+def slugify(t):
+    t = re.sub(r"[—·,()/]", " ", t)
+    return re.sub(r"\s+", "-", t.strip())
+
+
+for c in NEW_CASES:
+    raw = RAW[c["id"]]
+    photos = [rel[:-4] + ".webp" for rel in raw["images"] if not rel.endswith("/1.jpg") and rel not in BANNERS]
+    POSTS.append({**c, "date": raw["date"], "blogUrl": None,
+                  "place": {"name": c["place"]} if c.get("place") else None,
+                  "crew": c["crew"], "hours": tuple(c["hours"]), "time": fmt_time(c["hours"]),
+                  "quotes": [c["quote"]], "photos": photos, "thumb": photos[0] if photos else None,
+                  "path": f"/portfolio/{slugify(c['title'])}/"})
+for p in POSTS:
+    p["href"] = quote(p["path"])
+assert len({p["path"] for p in POSTS}) == len(POSTS), "사례 주소 중복"
 POSTS.sort(key=lambda p: p["date"], reverse=True)
 
 BY_SVC, BY_REG, BY_COMBO = defaultdict(list), defaultdict(list), defaultdict(list)
@@ -103,6 +142,8 @@ def url(path):
 
 
 def head(title, desc, path, img=None, extra="", home=False):
+    if TODAY < FREEZE_UNTIL and path in BASELINE:   # 재평가 중인 기존 페이지는 제목·설명을 바꾸지 않음
+        title, desc = BASELINE[path]["title"], BASELINE[path]["desc"]
     og_img = url("/img/" + img) if img else url("/favicon-512.png")
     verify = f'<meta name="naver-site-verification" content="{S["naverVerification"]}" />' if home else ""
     return f"""<!DOCTYPE html>
@@ -156,7 +197,7 @@ def header(active=""):
  <div class="wrap hd-in">
   <a class="logo" href="/"><img src="/favicon.svg" alt="" width="30" height="30"><span>{e(S['brand'])}</span></a>
   <nav class="gnb" id="gnb">
-   {a('/#services', '작업분야', 'service')}{a('/portfolio/', '시공사례', 'portfolio')}{a('/area/', '출장지역', 'area')}{a('/contact/', '상담안내', 'contact')}
+   {a('/#services', '작업분야', 'service')}{a('/portfolio/', '시공사례', 'portfolio')}{a('/area/', '출장지역', 'area')}{a('/about/', '업체소개', 'about')}{a('/contact/', '상담안내', 'contact')}
    <a class="gnb-cta" href="tel:{TEL}">☎ {PHONE}</a>
   </nav>
   <button class="burger" aria-label="메뉴" onclick="document.body.classList.toggle('menu-open')"><span></span><span></span><span></span></button>
@@ -206,7 +247,7 @@ def footer():
 def card(p, show_region=True):
     img = f'<img src="/img/{p["thumb"]}" alt="{e(p["title"])}" loading="lazy">' if p["thumb"] else '<div class="noimg"></div>'
     reg = f'<span class="chip ghost">{e(REG[p["region"]])}</span>' if show_region else ""
-    return f"""<a class="card" href="/portfolio/{p['id']}/">
+    return f"""<a class="card" href="{p['href']}">
  <div class="card-img">{img}</div>
  <div class="card-bd"><div class="chips"><span class="chip">{e(SVC[p['cat']]['short'])}</span>{reg}</div>
  <h3>{e(p['title'])}</h3><p>{e(p['summary'])}</p></div></a>"""
@@ -272,7 +313,7 @@ def build_home():
 </div></section>
 
 <section class="sec"><div class="wrap">
- <h2 class="h2">하루를 통째로 비우지 않으셔도 됩니다</h2>
+ <h2 class="h2">대부분 몇 시간이면 끝납니다</h2>
  <p class="sub">블로그 글마다 몇 명이 몇 시간 일했는지 적어 두었습니다. 지어낸 값이 아니라 기록입니다.</p>
  <div class="stats">
   <div><b>{one}건</b><span>1명이 작업</span><p>인원을 적어 둔 {sum(ALL_CREWS.values())}건 중</p></div>
@@ -347,7 +388,7 @@ def build_services():
 </div></section>
 <section class="sec alt"><div class="wrap">
  <h2 class="h2">{e(s['short'])} 시공 사진</h2>
- <div class="gallery">{''.join(f'<a href="/portfolio/{p["id"]}/"><img src="/img/{ph}" alt="{e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
+ <div class="gallery">{''.join(f'<a href="{p["href"]}"><img src="/img/{ph}" alt="{e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
 </div></section>
 <section class="sec"><div class="wrap">
  <h2 class="h2">진행 절차</h2>{steps()}
@@ -402,7 +443,7 @@ def build_themes():
 </div></section>
 <section class="sec alt"><div class="wrap">
  <h2 class="h2">원상복구 시공 사진</h2>
- <div class="gallery">{''.join(f'<a href="/portfolio/{p["id"]}/"><img src="/img/{ph}" alt="{e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
+ <div class="gallery">{''.join(f'<a href="{p["href"]}"><img src="/img/{ph}" alt="{e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
 </div></section>
 <section class="sec"><div class="wrap">
  <h2 class="h2">진행 절차</h2>{steps()}
@@ -469,7 +510,7 @@ def build_keywords():
 </div></section>
 <section class="sec alt"><div class="wrap">
  <h2 class="h2">{e(k['kw'])} 사진</h2>
- <div class="gallery">{''.join(f'<a href="/portfolio/{p["id"]}/"><img src="/img/{ph}" alt="{e(k["kw"])} — {e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
+ <div class="gallery">{''.join(f'<a href="{p["href"]}"><img src="/img/{ph}" alt="{e(k["kw"])} — {e(p["title"])}" loading="lazy"></a>' for p, ph in photos)}</div>
 </div></section>
 <section class="sec"><div class="wrap">
  <h2 class="h2">{e(k['kw'])} 시공사례 {len(posts)}건</h2>{grid(posts)}
@@ -510,7 +551,7 @@ def build_portfolio():
 
     for p in POSTS:
         s = SVC[p["cat"]]
-        path = f"/portfolio/{p['id']}/"
+        path = p["path"]
         bc = [("홈", "/"), ("시공사례", "/portfolio/"), (p["title"], path)]
         facts = [("지역", p["area"]), ("작업분야", s["name"]), ("작업일", p["date"].replace("-", ". "))]
         if p["crew"]:
@@ -523,9 +564,25 @@ def build_portfolio():
         related = [q for q in BY_SVC[p["cat"]] if q["id"] != p["id"]][:6]
         reg_link = f'<a href="/area/{p["region"]}/">{e(REG[p["region"]])} 다른 작업 보기</a>' if p["region"] in REGION_PAGES else ""
         quote = f'<blockquote class="q1">“{e(p["quotes"][0])}”<cite>고객님 말씀</cite></blockquote>' if p["quotes"] else ""
+        st = p.get("story")
+        ex = EXTRA.get(p["id"])
+        story = f"""<section class="story">
+ <h2 class="h3">현장 상황</h2><p class="prose">{e(st['situation'])}</p>
+ <h2 class="h3">확인한 내용</h2><p class="prose">{e(st['check'])}</p>
+ <h2 class="h3">작업 순서</h2><ol class="nums">{''.join(f'<li>{e(x)}</li>' for x in st['steps'])}</ol>
+ {f"<h2 class='h3'>이 현장의 작업 포인트</h2><p class='prose'>{e(POINTS[p['id']])}</p>" if p["id"] in POINTS else ""}
+ <h2 class="h3">비슷한 증상이라면</h2><p class="prose">{e(st['tip'])}</p>
+ {f"<h2 class='h3'>작업 후 달라진 점</h2><p class='prose'>{e(ex['result'])}</p>" if ex else ""}
+ {f"<h2 class='h3'>맡기기 전에 확인할 점</h2><ul class='checks'>" + "".join(f"<li>{e(x)}</li>" for x in ex['cautions']) + "</ul>" if ex else ""}
+</section>""" if st else ""
+        blog_btn = (f'<a class="btn ghost" href="{p["blogUrl"]}" target="_blank" rel="noopener">블로그에서 작업 과정 전체 보기 →</a> '
+                    if p["blogUrl"] else "")
         art = {"@context": "https://schema.org", "@type": "Article", "headline": p["title"], "datePublished": p["date"],
                "image": [url("/img/" + ph) for ph in p["photos"][:3]],
-               "author": {"@type": "Organization", "name": S["brand"]}, "description": p["summary"]}
+               "author": {"@type": "Organization", "name": S["brand"]},
+               "publisher": {"@type": "Organization", "name": S["brand"],
+                             "logo": {"@type": "ImageObject", "url": url("/favicon-512.png")}},
+               "mainEntityOfPage": url(p["path"]), "description": p["summary"]}
         title = f"{p['title']} | {S['brand']}"
         body = head(title, p["summary"], path, p["thumb"], breadcrumb_ld(bc) + jsonld(art)) + header("portfolio") + crumbs(bc) + f"""
 <article class="sec case"><div class="wrap narrow">
@@ -534,8 +591,10 @@ def build_portfolio():
  <p class="prose">{e(p['summary'])}</p>
  <dl class="facts">{''.join(f'<div><dt>{e(a)}</dt><dd>{e(b)}</dd></div>' for a, b in facts)}</dl>
  {quote}
+ {story}
+ <h2 class="h3">현장 사진 {len(p['photos'])}장</h2>
  <div class="gallery lb">{''.join(f'<a href="/img/{ph}"><img src="/img/{ph}" alt="{e(p["title"])} 사진 {i + 1}" loading="{"eager" if i < 2 else "lazy"}"></a>' for i, ph in enumerate(p['photos']))}</div>
- <p class="src"><a class="btn ghost" href="{p['blogUrl']}" target="_blank" rel="noopener">블로그에서 작업 과정 전체 보기 →</a> {reg_link}</p>
+ <p class="src">{blog_btn}{reg_link}</p>
  {f'<p class="src"><a class="btn ghost" href="{kw_href(KW_OF_POST[p["id"]])}">{e(KW_OF_POST[p["id"]]["kw"])} 사례 모아 보기 →</a></p>' if p["id"] in KW_OF_POST else ''}
  <div class="box"><b>{e(s['name'])}은 이렇게 합니다</b><p>{e(s['tagline'])}</p><a href="/service/{p['cat']}/">작업 방법 · 자주 묻는 질문 보기 →</a></div>
 </div></article>
@@ -545,6 +604,31 @@ def build_portfolio():
 
 
 # ───────────────────────── 출장지역 ─────────────────────────
+
+SERVICE_ZONES = [
+    ("서울", ["강남", "서초", "송파", "강동", "강서", "양천", "구로", "영등포", "금천", "관악", "동작", "마포", "은평", "서대문",
+             "종로", "중구", "용산", "성동", "광진", "노원", "도봉", "중랑", "동대문", "성북", "강북"]),
+    ("경기 남부", ["수원", "용인", "화성", "동탄", "병점", "오산", "평택", "안성", "안양", "군포", "의왕", "과천", "성남", "분당"]),
+    ("경기 서부·인천", ["인천", "부천", "시흥", "광명", "안산", "김포"]),
+    ("경기 동부", ["하남", "경기 광주", "이천", "여주", "구리", "남양주"]),
+    ("경기 북부", ["고양", "일산", "파주", "의정부", "양주"]),
+    ("충남", ["아산", "천안"]),
+]
+
+
+def zone_html():
+    by_name = {REG[r]: f"/area/{r}/" for r in REGION_PAGES}
+    outs = {o["name"]: quote(out_path(o["name"], OUT["tasks"][0])) for o in OUT["regions"]}
+    out = []
+    for zname, names in SERVICE_ZONES:
+        items = []
+        for nm in names:
+            link = by_name.get(nm) or outs.get(nm)
+            items.append(f'<a href="{link}">{e(nm)}</a>' if link else e(nm))
+        out.append(f"<div><b>{e(zname)}</b><p>{' · '.join(items)}</p></div>")
+    return "".join(out)
+
+
 def build_areas():
     rows = "".join(f'<a class="rg" href="/area/{r}/"><b>{e(REG[r])}</b><span>{len(BY_REG[r])}건</span></a>' for r in REGION_PAGES)
     others = [f"{REG[r]} {len(BY_REG[r])}건" for r in REG if BY_REG[r] and r not in REGION_PAGES]
@@ -555,6 +639,11 @@ def build_areas():
  <p class="lead">{e(S['areaLine'])}. 숫자는 블로그에 기록한 실제 시공 건수입니다.</p></div></section>
 <section class="sec"><div class="wrap"><div class="regions">{rows}</div>
  {f'<p class="sub small">그 밖에 {", ".join(others)}의 기록이 있습니다. 목록에 없는 지역도 일정이 맞으면 방문합니다.</p>' if others else ''}
+</div></section>
+<section class="sec alt"><div class="wrap">
+ <h2 class="h2">출장 가능 지역 전체</h2>
+ <p class="sub">시공 기록이 아직 없는 곳도 출장 갑니다. 밑줄 친 지역은 출장 안내 페이지가 있습니다.</p>
+ <div class="zone-list">{zone_html()}</div>
 </div></section>""" + cta() + footer()
     write("/area/", body)
 
@@ -605,6 +694,148 @@ def build_areas():
         write(path, body)
 
 
+
+# ───────────────────────── 출장 안내 (사례가 아직 없는 지역 × 작업) ─────────────────────────
+# "여기서 시공했다"가 아니라 "여기도 간다"를 알리는 페이지. 사례는 실제 지역 그대로 보여준다.
+def josa(word, a, b):
+    ch = word[-1]
+    return a if "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 else b
+
+
+def zone_of(p):
+    if p["region"] == "seoul":
+        for gu, z in OUT["seoulGu"].items():
+            if gu in p["area"] or gu in p["title"]:
+                return z
+        return "seoul-sw"
+    return OUT["regionZone"].get(p["region"], "gg-s")
+
+
+def place_label(p):
+    if p["region"] == "seoul":
+        m = re.search(r"서울\S*\s+(\S+?)구", p["area"])
+        return f"서울 {m.group(1)}" if m else "서울"
+    return REG[p["region"]]
+
+
+def out_path(rname, t):
+    return f"/{rname}-{t['slug']}/"
+
+
+def build_outreach():
+    for ri, r in enumerate(OUT["regions"]):
+        zone = OUT["zones"][r["zone"]]
+        for ti, t in enumerate(OUT["tasks"]):
+            s = SVC[t["svc"]]
+            same = [p for p in BY_SVC[t["svc"]] if zone_of(p) == r["zone"]]
+            rest = [p for p in BY_SVC[t["svc"]] if zone_of(p) != r["zone"]]
+            show = (same + rest)[:6]
+            places = []
+            for p in same:
+                if place_label(p) not in places:
+                    places.append(place_label(p))
+            name = r["name"]
+            path = out_path(name, t)
+            kw = f"{name} {t['kw']}"
+            intro = t["intro"][(ri + ti) % len(t["intro"])].format(r=name)
+            if same:
+                near_txt = (f"{name}{josa(name, '은', '는')} 다고침집수리의 {zone} 출장 지역입니다. 같은 권역인 {', '.join(places[:5])}에서 "
+                            f"{s['short']} 작업을 {len(same)}건 기록했습니다. 아직 {name}에서 기록한 사례는 없어서, 아래에는 가까운 지역의 실제 사례를 보여드립니다.")
+            else:
+                near_txt = (f"{name}{josa(name, '은', '는')} 다고침집수리의 {zone} 출장 지역입니다. 이 권역에서 기록한 {s['short']} 사례는 아직 없어서, "
+                            f"아래에는 다른 지역에서 한 실제 사례를 보여드립니다.")
+            faq = [{"q": f"{name}까지 출장 오시나요?",
+                    "a": f"네. {name}{josa(name, '은', '는')} {zone} 출장 지역입니다. 가까운 {', '.join(r['near'])} 쪽에도 다니고 있습니다. "
+                         f"사진과 위치를 문자로 보내주시면 가능한 방법과 방문 일정을 알려드립니다."}] + s["faq"][:2]
+            faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
+                      "mainEntity": [{"@type": "Question", "name": f["q"],
+                                      "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in faq]}
+            bc = [("홈", "/"), ("출장지역", "/area/"), (kw, path)]
+            title = f"{kw} | {S['brand']}"
+            desc = f"{kw} 출장. {intro.split('. ')[0]}. 가까운 {zone} 실제 시공 기록 {len(same)}건." if same else f"{kw} 출장. {intro.split('. ')[0]}."
+            other_tasks = [o for o in OUT["tasks"] if o is not t]
+            other_regions = [o for o in OUT["regions"] if o is not r]
+            body = head(title, desc, path, show[0]["thumb"] if show else None, breadcrumb_ld(bc) + jsonld(faq_ld)) + header("area") + crumbs(bc) + f"""
+<section class="page-hd"><div class="wrap"><small class="eng">{e(s['eng'])} · {e(name)}</small><h1>{e(kw)}</h1>
+ <p class="lead">{e(name)}도 출장 갑니다. 가까운 지역에서 한 실제 {e(s['short'])} 사례를 함께 보여드립니다.</p></div></section>
+<section class="sec"><div class="wrap narrow">
+ <p class="prose">{e(intro)}</p>
+ <div class="box"><b>{e(name)} 출장 안내</b><p>{e(near_txt)}</p><a href="/area/">출장 지역 전체 보기 →</a></div>
+ <h2 class="h3">이럴 때 연락 주세요</h2>
+ <ul class="checks">{''.join(f'<li>{e(x)}</li>' for x in s['symptoms'])}</ul>
+ <h2 class="h3">{e(t['kw'])}는 이렇게 진행합니다</h2>
+ <ol class="nums">{''.join(f'<li>{e(x)}</li>' for x in t['points'])}</ol>
+</div></section>
+<section class="sec alt"><div class="wrap">
+ <h2 class="h2">가까운 지역 {e(s['short'])} 시공사례</h2>{grid(show)}
+ <p class="more"><a class="btn ghost" href="/service/{t['svc']}/">{e(s['name'])} 전체 보기 →</a></p>
+</div></section>
+<section class="sec"><div class="wrap narrow">
+ <h2 class="h2">자주 묻는 질문</h2>
+ <div class="faq">{''.join(f'<details><summary>Q. {e(f["q"])}</summary><p>{e(f["a"])}</p></details>' for f in faq)}</div>
+ <h2 class="h3">{e(name)}에서 하는 다른 작업</h2>
+ <div class="chips">{''.join(f'<a class="chip" href="{quote(out_path(name, o))}">{e(name)} {e(o["kw"])}</a>' for o in other_tasks)}</div>
+ <h2 class="h3">다른 출장 지역 {e(t['kw'])}</h2>
+ <div class="chips">{''.join(f'<a class="chip ghost" href="{quote(out_path(o["name"], t))}">{e(o["name"])}</a>' for o in other_regions)}</div>
+</div></section>
+""" + cta(f"{name}이시면 사진만 보내주세요") + footer()
+            write(path, body)
+
+
+# ───────────────────────── 업체소개 ─────────────────────────
+def build_about():
+    path = "/about/"
+    bc = [("홈", "/"), ("업체소개", path)]
+    n = len(POSTS)
+    biz = {"@context": "https://schema.org", "@type": "HomeAndConstructionBusiness", "name": S["brand"],
+           "url": url("/"), "telephone": "+82-" + PHONE[1:], "image": url("/favicon-512.png"),
+           "logo": url("/favicon-512.png"), "sameAs": [S["blog"]],
+           "areaServed": [{"@type": "Place", "name": REG[r]} for r in REGION_PAGES],
+           "description": f"{S['mainArea']} 집수리 전문. " + ", ".join(SVC[k]["short"] for k in SVC_ORDER)}
+    about_ld = {"@context": "https://schema.org", "@type": "AboutPage", "name": ABOUT["title"], "url": url(path),
+                "about": {"@type": "HomeAndConstructionBusiness", "name": S["brand"], "telephone": "+82-" + PHONE[1:]}}
+    stat_rows = "".join(f'<a class="rg" href="/service/{k}/"><b>{e(SVC[k]["short"])}</b><span>{len(BY_SVC[k])}건</span></a>' for k in SVC_ORDER)
+    kp = {k["slug"]: k for k in KWP}
+    best = ""
+    for item in ABOUT["best"]:
+        s = SVC[item["svc"]]
+        links = "".join(f'<a class="chip ghost" href="{kw_href(kp[x])}">{e(kp[x]["kw"])}</a>' for x in item["kw"] if x in kp)
+        best += f"""<div class="best">
+ <h3>{e(s['name'])}<em>기록 {len(BY_SVC[item['svc']])}건</em></h3>
+ <p class="prose">{e(s['tagline'])}.</p>
+ <h4 class="h3">이럴 때 부르세요</h4><ul class="checks">{''.join(f'<li>{e(w)}</li>' for w in item['when'])}</ul>
+ <h4 class="h3">수리로 될지, 바꿔야 할지</h4><p class="prose">{e(item['judge'])}</p>
+ <h4 class="h3">상담할 때 찍어 보낼 사진</h4><p class="prose">{e(item['photo'])}</p>
+ <div class="chips">{links}<a class="chip" href="/service/{item['svc']}/">{e(s['short'])} 작업 전체 →</a></div>
+</div>"""
+    body = head(ABOUT["title"], ABOUT["desc"], path, POSTS[0]["thumb"], breadcrumb_ld(bc) + jsonld(biz) + jsonld(about_ld)) + header("about") + crumbs(bc) + f"""
+<section class="page-hd"><div class="wrap"><small class="eng">ABOUT</small><h1>다고침집수리 업체소개</h1>
+ <p class="lead">{e(ABOUT['lead'])}</p></div></section>
+<section class="sec"><div class="wrap">
+ <h2 class="h2">숫자로 보는 작업</h2>
+ <p class="sub">블로그에 사진과 함께 기록한 시공 {n}건을 분야별로 나눈 것입니다.</p>
+ <div class="regions">{stat_rows}</div>
+</div></section>
+<section class="sec alt"><div class="wrap">
+ <h2 class="h2">이렇게 일합니다</h2>
+ <ol class="steps">{''.join(f"<li><b>{e(x['t'])}</b><p>{e(x['d'])}</p></li>" for x in ABOUT['principles'])}</ol>
+</div></section>
+<section class="sec"><div class="wrap narrow">
+ <h2 class="h2">자주 맡기시는 작업</h2>
+ <p class="sub">기록이 많은 순서입니다. 증상, 수리로 될지 판단하는 기준, 상담할 때 보내실 사진을 정리했습니다.</p>
+ {best}
+</div></section>
+<section class="sec alt"><div class="wrap narrow">
+ <h2 class="h2">출장 지역</h2>
+ <p class="prose">{e(S['areaLine'])}. 실제 시공 기록이 있는 지역과 출장 가능한 지역 전체는 <a href="/area/">출장지역</a>에서 볼 수 있습니다.</p>
+ <h2 class="h2">상담 방법</h2>
+ <p class="prose">고칠 곳을 멀리서 한 장, 가까이서 한 장 찍어 문자로 보내주세요. 현장 작업 중에는 전화를 못 받을 수 있어 문자가 가장 빠릅니다. ☎ {e(PHONE)}</p>
+ <div class="btns"><a class="btn pri" href="sms:{TEL}">✉ 문자로 사진 보내기</a><a class="btn ghost" href="tel:{TEL}">☎ {PHONE}</a></div>
+</div></section>
+""" + footer()
+    write(path, body)
+
+
 # ───────────────────────── 상담안내 ─────────────────────────
 def build_contact():
     bc = [("홈", "/"), ("상담안내", "/contact/")]
@@ -624,21 +855,35 @@ def build_contact():
 
 
 # ───────────────────────── 부속 파일 ─────────────────────────
+def main_hash(path):
+    import hashlib
+    h = (DIST / path.lstrip("/") / "index.html").read_text(encoding="utf-8")
+    return hashlib.md5(h.split("<main>", 1)[1].split("</main>", 1)[0].encode()).hexdigest()
+
+
+def lastmod(path):
+    """본문(<main>)이 baseline과 같으면 예전 날짜 유지, 바뀌었거나 새 페이지면 오늘 날짜"""
+    b = BASELINE.get(path)
+    return b["lastmod"] if b and b["hash"] == main_hash(path) else TODAY
+
+
 def build_assets():
     shutil.copytree(STATIC, DIST, dirs_exist_ok=True)       # css, js, 파비콘, 네이버 인증 파일, .htaccess
     used = {ph for p in POSTS for ph in p["photos"]}
     for rel in used:
         dst = DIST / "img" / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(DATA / "img" / rel, dst)
+        if rel.endswith(".webp"):   # 새로 추가한 사진은 webp로 변환
+            Image.open(DATA / "img" / (rel[:-5] + ".jpg")).save(dst, "WEBP", quality=80, method=4)
+        else:
+            shutil.copy2(DATA / "img" / rel, dst)
     (DIST / "robots.txt").write_text(f"User-agent: *\nAllow: /\n\nUser-agent: Yeti\nAllow: /\n\nSitemap: {url('/sitemap.xml')}\n", encoding="utf-8")
-    imgs = {f"/portfolio/{p['id']}/": p["photos"] for p in POSTS}
-    titles = {f"/portfolio/{p['id']}/": p["title"] for p in POSTS}
-    last = {f"/portfolio/{p['id']}/": p["date"] for p in POSTS}
+    imgs = {p["path"]: p["photos"] for p in POSTS}
+    titles = {p["path"]: p["title"] for p in POSTS}
     parts = ['<?xml version="1.0" encoding="UTF-8"?>',
              '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">']
     for path in PAGES:
-        parts.append(f"<url><loc>{url(path)}</loc><lastmod>{last.get(path, DATES[-1])}</lastmod>")
+        parts.append(f"<url><loc>{url(path)}</loc><lastmod>{lastmod(path)}</lastmod>")
         for ph in imgs.get(path, [])[:5]:
             parts.append(f"<image:image><image:loc>{url('/img/' + ph)}</image:loc><image:title>{e(titles[path])}</image:title></image:image>")
         parts.append("</url>")
@@ -660,7 +905,7 @@ def build_rss():
 
     items = []
     for p in POSTS:
-        link = url(f"/portfolio/{p['id']}/")
+        link = url(p["path"])
         img = f'<img src="{url("/img/" + p["thumb"])}" alt="{e(p["title"])}"><br>' if p["thumb"] else ""
         items.append(f"""<item>
  <title>{e(p['title'])}</title>
@@ -691,7 +936,7 @@ def main():
     if DIST.exists():
         shutil.rmtree(DIST)
     DIST.mkdir()
-    build_home(); build_services(); build_themes(); build_keywords(); build_portfolio(); build_areas(); build_contact()
+    build_home(); build_services(); build_themes(); build_keywords(); build_portfolio(); build_areas(); build_outreach(); build_about(); build_contact()
     n_img = build_assets()
     print(f"페이지 {len(PAGES)}개 (메인 1 · 분야 {len(SVC)} · 사례 {len(POSTS) + 1} · 지역 {len(REGION_PAGES) + 1} · 지역+분야 {len(COMBOS)} · 상담 1)")
     print(f"사진 {n_img}장 · sitemap.xml · robots.txt → dist/")

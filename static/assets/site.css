@@ -213,3 +213,18 @@ blockquote{background:#fff;border-left:4px solid var(--yellow);border-radius:0 1
   .cb-sms{background:var(--teal)}
   .cb-sms .cb-act{font-weight:800;font-size:clamp(12px,3.4vw,14px)}
 }
+
+/* 2026-10 보강: 사례 본문, 업체소개, 출장 지역 */
+.story{margin:26px 0 8px}
+.story .h3{margin-top:22px}
+.nums{counter-reset:n;margin:8px 0 0;padding:0;list-style:none}
+.nums li{counter-increment:n;padding:8px 0 8px 34px;position:relative;border-bottom:1px dashed var(--line)}
+.nums li::before{content:counter(n);position:absolute;left:0;top:8px;width:22px;height:22px;border-radius:50%;background:var(--teal);color:#fff;font-size:12px;font-weight:900;display:flex;align-items:center;justify-content:center}
+.zone-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:14px}
+.zone-list div{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
+.zone-list b{display:block;color:var(--navy);margin-bottom:6px}
+.zone-list p{font-size:14px;color:var(--muted);line-height:1.8;overflow-wrap:anywhere}
+.zone-list a{color:var(--navy);text-decoration:underline;text-underline-offset:3px}
+.best{border-top:1px solid var(--line);padding-top:22px;margin-top:22px}
+.best h3{color:var(--navy);font-size:20px;margin-bottom:8px}
+.best h3 em{font-style:normal;color:var(--teal);font-size:15px;margin-left:6px}
