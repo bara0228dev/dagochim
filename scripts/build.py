@@ -618,7 +618,7 @@ SERVICE_ZONES = [
 
 def zone_html():
     by_name = {REG[r]: f"/area/{r}/" for r in REGION_PAGES}
-    outs = {o["name"]: quote(out_path(o["name"], OUT["tasks"][0])) for o in OUT["regions"]}
+    outs = {t: quote(hub_path(hb)) for hb in OUT["hubs"] for t in hb["towns"]}
     out = []
     for zname, names in SERVICE_ZONES:
         items = []
@@ -642,7 +642,7 @@ def build_areas():
 </div></section>
 <section class="sec alt"><div class="wrap">
  <h2 class="h2">출장 가능 지역 전체</h2>
- <p class="sub">시공 기록이 아직 없는 곳도 출장 갑니다. 밑줄 친 지역은 출장 안내 페이지가 있습니다.</p>
+ <p class="sub">시공 기록이 아직 없는 곳도 출장 갑니다. 밑줄 친 지역을 누르면 실제 시공 기록이나 권역 출장 안내를 볼 수 있습니다.</p>
  <div class="zone-list">{zone_html()}</div>
 </div></section>""" + cta() + footer()
     write("/area/", body)
@@ -722,64 +722,58 @@ def out_path(rname, t):
     return f"/{rname}-{t['slug']}/"
 
 
+def hub_path(h):
+    return f"/{h['slug']}/"
+
+
 def build_outreach():
-    for ri, r in enumerate(OUT["regions"]):
-        zone = OUT["zones"][r["zone"]]
-        for ti, t in enumerate(OUT["tasks"]):
-            s = SVC[t["svc"]]
-            same = [p for p in BY_SVC[t["svc"]] if zone_of(p) == r["zone"]]
-            rest = [p for p in BY_SVC[t["svc"]] if zone_of(p) != r["zone"]]
-            show = (same + rest)[:6]
-            places = []
-            for p in same:
-                if place_label(p) not in places:
-                    places.append(place_label(p))
-            name = r["name"]
-            path = out_path(name, t)
-            kw = f"{name} {t['kw']}"
-            intro = t["intro"][(ri + ti) % len(t["intro"])].format(r=name)
-            if same:
-                near_txt = (f"{name}{josa(name, '은', '는')} 다고침집수리의 {zone} 출장 지역입니다. 같은 권역인 {', '.join(places[:5])}에서 "
-                            f"{s['short']} 작업을 {len(same)}건 기록했습니다. 아직 {name}에서 기록한 사례는 없어서, 아래에는 가까운 지역의 실제 사례를 보여드립니다.")
-            else:
-                near_txt = (f"{name}{josa(name, '은', '는')} 다고침집수리의 {zone} 출장 지역입니다. 이 권역에서 기록한 {s['short']} 사례는 아직 없어서, "
-                            f"아래에는 다른 지역에서 한 실제 사례를 보여드립니다.")
-            faq = [{"q": f"{name}까지 출장 오시나요?",
-                    "a": f"네. {name}{josa(name, '은', '는')} {zone} 출장 지역입니다. 가까운 {', '.join(r['near'])} 쪽에도 다니고 있습니다. "
-                         f"사진과 위치를 문자로 보내주시면 가능한 방법과 방문 일정을 알려드립니다."}] + s["faq"][:2]
-            faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
-                      "mainEntity": [{"@type": "Question", "name": f["q"],
-                                      "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in faq]}
-            bc = [("홈", "/"), ("출장지역", "/area/"), (kw, path)]
-            title = f"{kw} | {S['brand']}"
-            desc = f"{kw} 출장. {intro.split('. ')[0]}. 가까운 {zone} 실제 시공 기록 {len(same)}건." if same else f"{kw} 출장. {intro.split('. ')[0]}."
-            other_tasks = [o for o in OUT["tasks"] if o is not t]
-            other_regions = [o for o in OUT["regions"] if o is not r]
-            body = head(title, desc, path, show[0]["thumb"] if show else None, breadcrumb_ld(bc) + jsonld(faq_ld)) + header("area") + crumbs(bc) + f"""
-<section class="page-hd"><div class="wrap"><small class="eng">{e(s['eng'])} · {e(name)}</small><h1>{e(kw)}</h1>
- <p class="lead">{e(name)}도 출장 갑니다. 가까운 지역에서 한 실제 {e(s['short'])} 사례를 함께 보여드립니다.</p></div></section>
+    """권역 출장 페이지: 기록이 아직 없는 지역을 권역 단위로 안내하고, 그 권역의 실제 사례를 보여준다."""
+    for h in OUT["hubs"]:
+        zone = OUT["zones"][h["zone"]]
+        towns = "·".join(h["towns"])
+        cases = [p for p in POSTS if zone_of(p) == h["zone"]]
+        svc_cnt = Counter(p["cat"] for p in cases)
+        places = []
+        for p in cases:
+            if place_label(p) not in places:
+                places.append(place_label(p))
+        reg_links = [r for r in REGION_PAGES if OUT["regionZone"].get(r) == h["zone"]]
+        path = hub_path(h)
+        kw = f"{towns} 집수리 출장"
+        title = f"{kw} | {zone} 다고침집수리"
+        desc = (f"{towns} 집수리 출장. {zone}에서 기록한 실제 시공 {len(cases)}건 — "
+                + ", ".join(f"{SVC[k]['short']} {v}건" for k, v in svc_cnt.most_common(3)) + ". 사진을 문자로 보내주시면 가능한 방법부터 알려드립니다.")
+        faq = [{"q": f"{towns}까지 출장 오시나요?",
+                "a": f"네. {towns}{josa(h['towns'][-1], '은', '는')} {zone} 출장 지역입니다. 고칠 곳 사진과 위치를 문자로 보내주시면 가능한 방법과 방문 일정을 알려드립니다."},
+               {"q": "어떤 작업을 맡길 수 있나요?",
+                "a": f"이 권역에서는 {', '.join(SVC[k]['short'] for k, _ in svc_cnt.most_common(4))} 작업 기록이 있습니다. 그 밖에도 작업분야에 있는 일은 모두 상담할 수 있습니다."}]
+        faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
+                  "mainEntity": [{"@type": "Question", "name": f["q"],
+                                  "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in faq]}
+        bc = [("홈", "/"), ("출장지역", "/area/"), (kw, path)]
+        others = [o for o in OUT["hubs"] if o is not h]
+        body = head(title, desc, path, cases[0]["thumb"] if cases else None, breadcrumb_ld(bc) + jsonld(faq_ld)) + header("area") + crumbs(bc) + f"""
+<section class="page-hd"><div class="wrap"><small class="eng">AREA · {e(zone)}</small><h1>{e(kw)}</h1>
+ <p class="lead">{e(zone)} 출장 안내입니다. 이 권역에서 실제로 한 작업을 함께 보여드립니다.</p>
+ <div class="chips big">{''.join(f'<a class="chip ghost" href="/service/{k}/">{e(SVC[k]["short"])} {v}건</a>' for k, v in svc_cnt.most_common())}</div>
+</div></section>
 <section class="sec"><div class="wrap narrow">
- <p class="prose">{e(intro)}</p>
- <div class="box"><b>{e(name)} 출장 안내</b><p>{e(near_txt)}</p><a href="/area/">출장 지역 전체 보기 →</a></div>
- <h2 class="h3">이럴 때 연락 주세요</h2>
- <ul class="checks">{''.join(f'<li>{e(x)}</li>' for x in s['symptoms'])}</ul>
- <h2 class="h3">{e(t['kw'])}는 이렇게 진행합니다</h2>
- <ol class="nums">{''.join(f'<li>{e(x)}</li>' for x in t['points'])}</ol>
+ <p class="prose">{e(h['intro'])}</p>
+ <div class="box"><b>{e(zone)} 기록</b><p>{e(', '.join(places))}에서 모두 {len(cases)}건을 작업했습니다.</p>
+ {('<div class="chips">' + ''.join(f'<a class="chip" href="/area/{r}/">{e(REG[r])} 집수리</a>' for r in reg_links) + '</div>') if reg_links else ''}</div>
 </div></section>
 <section class="sec alt"><div class="wrap">
- <h2 class="h2">가까운 지역 {e(s['short'])} 시공사례</h2>{grid(show)}
- <p class="more"><a class="btn ghost" href="/service/{t['svc']}/">{e(s['name'])} 전체 보기 →</a></p>
+ <h2 class="h2">{e(zone)} 시공사례 {len(cases)}건</h2>{grid(cases[:9])}
 </div></section>
 <section class="sec"><div class="wrap narrow">
+ <h2 class="h2">진행 절차</h2>{steps()}
  <h2 class="h2">자주 묻는 질문</h2>
  <div class="faq">{''.join(f'<details><summary>Q. {e(f["q"])}</summary><p>{e(f["a"])}</p></details>' for f in faq)}</div>
- <h2 class="h3">{e(name)}에서 하는 다른 작업</h2>
- <div class="chips">{''.join(f'<a class="chip" href="{quote(out_path(name, o))}">{e(name)} {e(o["kw"])}</a>' for o in other_tasks)}</div>
- <h2 class="h3">다른 출장 지역 {e(t['kw'])}</h2>
- <div class="chips">{''.join(f'<a class="chip ghost" href="{quote(out_path(o["name"], t))}">{e(o["name"])}</a>' for o in other_regions)}</div>
+ <h2 class="h3">다른 권역 출장 안내</h2>
+ <div class="chips">{''.join(f'<a class="chip ghost" href="{quote(hub_path(o))}">{e("·".join(o["towns"]))}</a>' for o in others)}</div>
 </div></section>
-""" + cta(f"{name}이시면 사진만 보내주세요") + footer()
-            write(path, body)
+""" + cta(f"{towns}이시면 사진만 보내주세요") + footer()
+        write(path, body)
 
 
 # ───────────────────────── 업체소개 ─────────────────────────
